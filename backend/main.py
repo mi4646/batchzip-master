@@ -6,14 +6,14 @@ from fastapi.exceptions import HTTPException, RequestValidationError
 
 from routes import routers
 from config import settings as config
-from backend.handlers.logs import (
+from backend.handlers.utils import (
     logger,
     logging,
     setup_logging,
+    init_redis_client,
 )
 
-from backend.handlers.redis import init_redis_client
-from backend.handlers.exception import (
+from backend.handlers.utils.exception import (
     APIError,
     not_found_handler,
     api_error_handler,

@@ -1,5 +1,5 @@
 import redis.asyncio as redis
-from backend.handlers.logs import logger
+from backend.handlers.utils.logs import logger
 from backend.config import settings as config
 
 

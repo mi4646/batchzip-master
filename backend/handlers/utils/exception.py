@@ -3,7 +3,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import ORJSONResponse
 from fastapi.exceptions import RequestValidationError
 
-from backend.handlers.logs import logger
+from backend.handlers.utils.logs import logger
 import traceback
 
 
