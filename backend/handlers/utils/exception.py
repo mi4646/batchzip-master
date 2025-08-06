@@ -47,7 +47,7 @@ async def not_found_handler(request: Request, exc: HTTPException) -> ORJSONRespo
         'code': 404,
         'error': exc.detail,
         "message": "资源未找到 | Not Found. 请检查API文档以获取可用端点.",
-        'docs_url': str(request.url.replace(path="/docs"))
+        'docs_url': str(request.url.replace(path="/api/docs"))
     }
     return ORJSONResponse(content=response_data, status_code=404)
 

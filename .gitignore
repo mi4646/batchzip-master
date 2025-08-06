@@ -214,3 +214,7 @@ __marimo__/
 
 # Backend logs
 backend/logs/
+
+# Cache
+backend/uploads/
+backend/temp/

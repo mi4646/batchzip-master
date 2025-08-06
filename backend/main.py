@@ -53,6 +53,18 @@ def get_application() -> FastAPI:
         debug=config.DEBUG,
         version=config.VERSION,
         lifespan=lifespan,
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+        openapi_url="/api/openapi.json",
+        contact={
+            "name": "技术支持",
+            "url": "https://github.com/mi4646/batchzip-master",
+            "email": "support@example.com"
+        },
+        license_info={
+            "name": "MIT License",
+            "url": "https://mit-license.org/"
+        }
     )
 
     # CORS 中间件配置
