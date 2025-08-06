@@ -1,6 +1,8 @@
-import os
-from typing import Dict, List, Union
 from pydantic_settings import BaseSettings
+from typing import Dict, List, Union, Final, Set
+
+import os
+from pathlib import Path
 
 
 def env(key, type_, default=None):
@@ -62,8 +64,6 @@ class Settings(BaseSettings):
     ALLOWED_METHODS: List[str] = ['*']
     ALLOWED_HEADERS: List[str] = ['*']
 
-
-
     # REDIS_URI 配置
     REDIS_CONFIG: Dict[str, Union[str, int, bool]] = {
         'host': env('REDIS_HOST', str, 'localhost'),
@@ -79,3 +79,17 @@ class Settings(BaseSettings):
     AUTO_DELETE_ERROR_LOGS_DAYS: int = 7
     AUTO_DELETE_REQUEST_LOGS_ENABLED: bool = False
     AUTO_DELETE_REQUEST_LOGS_DAYS: int = 30
+
+    # 文件配置
+    # 每次读取 5MB
+    CHUNK_SIZE: Final[int] = 1024 * 1024 * 5
+    # 最大文件大小 500MB
+    MAX_FILE_SIZE: Final[int] = 1024 * 1024 * 100
+    # 文件上传目录
+    UPLOAD_DIR: Final[Path] = Path("uploads")
+    # 临时文件目录
+    TEMP_DIR: Final[Path] = Path("temp")
+    # 允许的文件类型（按后缀过滤）
+    ALLOWED_FILE_TYPES: Final[Set[str]] = {
+        ".zip", ".tar.gz", ".rar", ".tar", ".tar.bz", ".7z"
+    }

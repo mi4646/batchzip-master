@@ -9,20 +9,22 @@ import aiofiles
 from pathlib import Path
 from datetime import datetime
 
+from backend.config import settings as config
 from backend.handlers import success_response
 from backend.handlers.utils import logger, paginator_list
 
 router = APIRouter(tags=['compress'])
 
-CHUNK_SIZE = 1024 * 1024 * 5  # 每次读取 5MB
-MAX_FILE_SIZE = 1024 * 1024 * 100  # 500MB
-UPLOAD_DIR = Path("uploads")
-TEMP_DIR = Path("temp")
 
-# 允许的文件类型（按后缀过滤）
-ALLOWED_FILE_TYPES = {
-    ".zip", ".tar.gz", ".rar", ".tar", ".tar.bz", ".7z"
-}
+# CHUNK_SIZE = 1024 * 1024 * 5  # 每次读取 5MB
+# MAX_FILE_SIZE = 1024 * 1024 * 100  # 500MB
+# UPLOAD_DIR = Path("uploads")
+# TEMP_DIR = Path("temp")
+#
+# # 允许的文件类型（按后缀过滤）
+# ALLOWED_FILE_TYPES = {
+#     ".zip", ".tar.gz", ".rar", ".tar", ".tar.bz", ".7z"
+# }
 
 
 def convert_bytes_to_mb(size_in_bytes: int) -> float:
@@ -44,7 +46,7 @@ async def get_compress_formats():
     支持的压缩格式包括 zip 和 tar.gz
     """
     formats = []
-    for ext in ALLOWED_FILE_TYPES:
+    for ext in config.ALLOWED_FILE_TYPES:
         formats.append({
             "name": ext[1:],
             "description": f"{ext[1:].upper()} 压缩格式"
@@ -65,8 +67,8 @@ async def get_uploaded_files(
     :return: 文件列表
     """
     files = []
-    if UPLOAD_DIR.exists():
-        for file_path in UPLOAD_DIR.iterdir():
+    if config.UPLOAD_DIR.exists():
+        for file_path in config.UPLOAD_DIR.iterdir():
             if file_path.is_file():
                 stat = file_path.stat()
                 files.append({
@@ -83,7 +85,7 @@ async def get_uploaded_files(
 @router.post(
     "/compress",
     summary='上传文件，添加压缩任务|支持大文件上传',
-    description=f"支持压缩格式{', '.join(ALLOWED_FILE_TYPES)}",
+    description=f"支持压缩格式{', '.join(config.ALLOWED_FILE_TYPES)}",
     response_model=dict
 )
 async def add_compress_task(
@@ -135,16 +137,16 @@ async def validate_file(file: UploadFile) -> dict:
         return {"error": f"检测到空文件: {file.filename or '无文件名'}"}
 
     # 检查文件大小（预检查）
-    if hasattr(file, 'size') and file.size > MAX_FILE_SIZE:
+    if hasattr(file, 'size') and file.size > config.MAX_FILE_SIZE:
         return {
-            "error": f"文件 {file.filename} 大小超过限制 {MAX_FILE_SIZE / (1024 * 1024):.2f} MB"
+            "error": f"文件 {file.filename} 大小超过限制 {config.MAX_FILE_SIZE / (1024 * 1024):.2f} MB"
         }
 
     # 检查文件类型
     file_ext = get_file_extension(file.filename)
-    if file_ext not in ALLOWED_FILE_TYPES:
+    if file_ext not in config.ALLOWED_FILE_TYPES:
         return {
-            "error": f"不支持的文件类型: {file_ext} 仅支持 {', '.join(ALLOWED_FILE_TYPES)}"
+            "error": f"不支持的文件类型: {file_ext} 仅支持 {', '.join(config.ALLOWED_FILE_TYPES)}"
         }
 
     return {"valid": True}
@@ -153,14 +155,14 @@ async def validate_file(file: UploadFile) -> dict:
 async def upload_single_file(file: UploadFile) -> dict:
     """上传单个文件 - 支持大文件"""
     # 生成唯一文件名
-    if not UPLOAD_DIR.exists():
-        UPLOAD_DIR.mkdir(exist_ok=True)
-    if not TEMP_DIR.exists():
-        TEMP_DIR.mkdir(exist_ok=True)
+    if not config.UPLOAD_DIR.exists():
+        config.UPLOAD_DIR.mkdir(exist_ok=True)
+    if not config.TEMP_DIR.exists():
+        config.TEMP_DIR.mkdir(exist_ok=True)
 
     unique_filename = f"{uuid.uuid4().hex}_{file.filename}"
-    temp_path = TEMP_DIR / f"{unique_filename}.tmp"
-    final_path = UPLOAD_DIR / unique_filename
+    temp_path = config.TEMP_DIR / f"{unique_filename}.tmp"
+    final_path = config.UPLOAD_DIR / unique_filename
 
     logger.info(f"[compress] 开始上传文件: {file.filename}")
 
@@ -171,17 +173,17 @@ async def upload_single_file(file: UploadFile) -> dict:
     try:
         async with aiofiles.open(temp_path, 'wb') as out_file:
             while True:
-                chunk = await file.read(CHUNK_SIZE)
+                chunk = await file.read(config.CHUNK_SIZE)
                 if not chunk:
                     break
 
                 total_size += len(chunk)
 
                 # 实时检查文件大小
-                if total_size > MAX_FILE_SIZE:
+                if total_size > config.MAX_FILE_SIZE:
                     raise HTTPException(
                         400,
-                        f"文件 {file.filename} 大小超过限制 {MAX_FILE_SIZE / (1024 * 1024):.2f} MB"
+                        f"文件 {file.filename} 大小超过限制 {config.MAX_FILE_SIZE / (1024 * 1024):.2f} MB"
                     )
 
                 # 更新MD5
