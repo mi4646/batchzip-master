@@ -16,17 +16,6 @@ from backend.handlers.utils import logger, paginator_list
 router = APIRouter(tags=['compress'])
 
 
-# CHUNK_SIZE = 1024 * 1024 * 5  # 每次读取 5MB
-# MAX_FILE_SIZE = 1024 * 1024 * 100  # 500MB
-# UPLOAD_DIR = Path("uploads")
-# TEMP_DIR = Path("temp")
-#
-# # 允许的文件类型（按后缀过滤）
-# ALLOWED_FILE_TYPES = {
-#     ".zip", ".tar.gz", ".rar", ".tar", ".tar.bz", ".7z"
-# }
-
-
 def convert_bytes_to_mb(size_in_bytes: int) -> float:
     """
     文件大小转换为 MB
@@ -98,6 +87,10 @@ async def add_compress_task(
     if not files:
         raise HTTPException(400, "没有上传任何文件")
 
+    # 每次上传文件数量限制
+    if len(files) > config.MAX_FILES_PER_REQUEST:
+        raise HTTPException(400, f"文件数量超过限制 {config.MAX_FILES_PER_REQUEST} 个")
+
     uploaded_files = []
 
     try:
@@ -121,13 +114,11 @@ async def add_compress_task(
             "message": f"成功上传 {len(uploaded_files)} 个文件"
         })
 
-    except HTTPException:
-        raise
     except Exception as e:
         # 清理已上传的文件
         await cleanup_uploaded_files(uploaded_files)
         logger.error(f"文件上传失败: {str(e)}")
-        raise HTTPException(500, f"文件上传失败: {str(e)}")
+        raise HTTPException(400, f"文件上传失败: {str(e)}")
 
 
 async def validate_file(file: UploadFile) -> dict:

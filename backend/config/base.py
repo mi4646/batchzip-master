@@ -81,10 +81,12 @@ class Settings(BaseSettings):
     AUTO_DELETE_REQUEST_LOGS_DAYS: int = 30
 
     # 文件配置
+    # 每次上传文件数量限制
+    MAX_FILES_PER_REQUEST: int = 10
     # 每次读取 5MB
     CHUNK_SIZE: Final[int] = 1024 * 1024 * 5
     # 最大文件大小 500MB
-    MAX_FILE_SIZE: Final[int] = 1024 * 1024 * 100
+    MAX_FILE_SIZE: Final[int] = 1024 * 1024 * 500
     # 文件上传目录
     UPLOAD_DIR: Final[Path] = Path("uploads")
     # 临时文件目录
