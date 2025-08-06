@@ -70,8 +70,8 @@ async def get_uploaded_files(
             if file_path.is_file():
                 stat = file_path.stat()
                 files.append({
-                    "size": stat.st_size,
                     "filename": file_path.name,
+                    "size": f"{convert_bytes_to_mb(stat.st_size)} MB",
                     "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat()
                 })
 
@@ -199,7 +199,7 @@ async def upload_single_file(file: UploadFile) -> dict:
             "original_name": file.filename,
             "saved_name": unique_filename,
             "file_path": str(final_path),
-            "size": total_size,
+            "size": f"{convert_bytes_to_mb(total_size)} MB",
             "md5": md5_hash.hexdigest(),
             "content_type": file.content_type,
             "uploaded_at": datetime.now().isoformat()
