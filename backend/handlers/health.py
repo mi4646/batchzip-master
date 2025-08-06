@@ -3,6 +3,7 @@ from backend.handlers import success_response
 
 router = APIRouter(tags=['health'])
 
+
 @router.get("/healthz", summary='健康检查')
 @router.get("/health", summary='健康检查')
 async def health_check():
@@ -16,6 +17,7 @@ async def health_check():
             "message": "Service is running normally",
         }
     )
+
 
 @router.get("/version", summary='版本检查')
 async def version_check():

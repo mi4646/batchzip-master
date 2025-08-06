@@ -4,14 +4,13 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import HTTPException, RequestValidationError
 
+from routes import routers
 from config import settings as config
 from backend.handlers.logs import (
     logger,
     logging,
     setup_logging,
 )
-
-from backend.api import router as api_router
 
 from backend.handlers.redis import init_redis_client
 from backend.handlers.exception import (
@@ -22,6 +21,15 @@ from backend.handlers.exception import (
     exception_error_handler,
     validation_error_handler,
 )
+
+
+def setup_routes(application):
+    """
+    设置所有路由
+    :param application: FastAPI 应用实例
+    """
+    for router, prefix in routers:
+        application.include_router(router, prefix=prefix)
 
 
 @asynccontextmanager
@@ -66,9 +74,8 @@ def get_application() -> FastAPI:
     # 全局异常处理器
     application.add_exception_handler(Exception, exception_error_handler)
 
-    # 路由处理
-    application.include_router(api_router, prefix="/api")
-
+    # 配置路由
+    setup_routes(application)
     return application
 
 
