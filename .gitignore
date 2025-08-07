@@ -218,3 +218,4 @@ backend/logs/
 # Cache
 backend/uploads/
 backend/temp/
+backend/compressed/

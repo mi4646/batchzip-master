@@ -3,43 +3,39 @@ import importlib.util
 from .base import Settings
 
 _ENV_MAP = {
-    "base": "config.base.Settings",
     "local": "config.local.LocalSettings",
     "test": "config.test.TestSettings",
     "prod": "config.prod.ProdSettings",
     "ci": "config.ci.CISettings",
+    # 如果没有指定，默认使用 'base' 配置
+    "base": "config.base.Settings",
 }
 
 
-def _get_settings_class():
+def load_settings():
     """
-    根据环境变量获取配置类。
-    :return: 配置类
+    根据环境变量动态加载并返回配置类的实例。
     """
     env = os.getenv("ENV", "local").lower()
-    if env not in _ENV_MAP:
+
+    # 获取完整的模块路径和类名
+    full_path = _ENV_MAP.get(env)
+    if not full_path:
         raise ValueError(f"Invalid environment: {env}. Available: {_ENV_MAP.keys()}")
 
-    full_path = _ENV_MAP[env]
     module_path, class_name = full_path.rsplit(".", 1)
 
-    # 检查模块是否存在
-    spec = importlib.util.find_spec(module_path)
-    if spec is None:
-        raise ImportError(f"Module '{module_path}' not found. Please make sure the file exists.")
+    # 动态导入模块和类
+    try:
+        module = importlib.import_module(module_path)
+        settings_class = getattr(module, class_name)
+    except (ImportError, AttributeError) as e:
+        raise RuntimeError(f"Failed to load settings for environment '{env}': {e}")
 
-    # 导入模块
-    module = importlib.import_module(module_path)
-
-    # 检查类是否存在
-    if not hasattr(module, class_name):
-        raise AttributeError(f"Class '{class_name}' not found in module '{module_path}'.")
-
-    return getattr(module, class_name)
+    return settings_class()
 
 
-# 获取设置类并实例化
-SettingsClass = _get_settings_class()
-settings = SettingsClass()
+# 在模块被导入时，自动加载并实例化配置对象
+settings = load_settings()
 
 __all__ = ["settings"]

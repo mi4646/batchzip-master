@@ -1,19 +1,21 @@
-from fastapi import BackgroundTasks
 from typing import Annotated, Optional, List
 from fastapi.exceptions import HTTPException
-from fastapi import APIRouter, File, UploadFile, Query
+from fastapi import APIRouter, BackgroundTasks, File, UploadFile, Query, Form
 
 import uuid
-import hashlib
-import aiofiles
+import logging
 from pathlib import Path
 from datetime import datetime
 
-from backend.config import settings as config
+from backend.config import settings
 from backend.handlers import success_response
-from backend.handlers.utils import logger, paginator_list
+from backend.handlers.utils import paginator_list
+from backend.handlers.core.zip_service import ZipService
+from backend.handlers.core.file_service import FileService
 
 router = APIRouter(tags=['compress'])
+
+logger = logging.getLogger(__name__)
 
 
 def convert_bytes_to_mb(size_in_bytes: int) -> float:
@@ -35,7 +37,7 @@ async def get_compress_formats():
     支持的压缩格式包括 zip 和 tar.gz
     """
     formats = []
-    for ext in config.ALLOWED_FILE_TYPES:
+    for ext in settings.ALLOWED_FILE_TYPES:
         formats.append({
             "name": ext[1:],
             "description": f"{ext[1:].upper()} 压缩格式"
@@ -56,8 +58,8 @@ async def get_uploaded_files(
     :return: 文件列表
     """
     files = []
-    if config.UPLOAD_DIR.exists():
-        for file_path in config.UPLOAD_DIR.iterdir():
+    if settings.UPLOAD_DIR.exists():
+        for file_path in settings.UPLOAD_DIR.iterdir():
             if file_path.is_file():
                 stat = file_path.stat()
                 files.append({
@@ -72,41 +74,52 @@ async def get_uploaded_files(
 
 
 @router.post(
-    "/compress",
-    summary='上传文件，添加压缩任务|支持大文件上传',
-    description=f"支持压缩格式{', '.join(config.ALLOWED_FILE_TYPES)}",
+    "/rezip",
+    summary='重新压缩ZIP文件|支持大文件上传',
+    description=f"支持压缩格式{', '.join(settings.ALLOWED_FILE_TYPES)}",
     response_model=dict
 )
 async def add_compress_task(
         files: Annotated[Optional[List[UploadFile]], File(description="多个文件作为 UploadFile")] = None,
+        extract_password: Optional[str] = Form(None, description="解压密码"),
+        compress_password: Optional[str] = Form(None, description="压缩密码"),
+        compression_level: int = Form(6, ge=0, le=9, description="压缩级别 0-9"),
         background_tasks: BackgroundTasks = None
 ):
     """
     添加压缩任务 - 支持大文件上传
+    :param background_tasks: 后台任务队列
+    :param files:
+    :param extract_password: 如果原文件有密码，需要提供extract_password
+    :param compress_password: 如果需要密码保护，提供compress_password
+    :param compression_level: 压缩级别 0-9, 0 表示无压缩，9 表示最大压缩
     """
     if not files:
         raise HTTPException(400, "没有上传任何文件")
 
-    # 每次上传文件数量限制
-    if len(files) > config.MAX_FILES_PER_REQUEST:
-        raise HTTPException(400, f"文件数量超过限制 {config.MAX_FILES_PER_REQUEST} 个")
+    # 先验证整个文件队列
+    try:
+        validation_result = await FileService.validate_file_queue(files)
+        if "error" in validation_result:
+            raise HTTPException(400, validation_result["error"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文件队列验证失败: {str(e)}")
+        raise HTTPException(400, f"文件验证失败: {str(e)}")
 
     uploaded_files = []
 
     try:
         for file in files:
-            # 验证文件
-            validation_result = await validate_file(file)
-            if "error" in validation_result:
-                raise HTTPException(400, validation_result["error"])
-
-            # 上传文件
-            file_info = await upload_single_file(file)
+            file_info = await FileService.upload_single_file(file)
             uploaded_files.append(file_info)
 
             # 添加后台处理任务
             if background_tasks:
-                background_tasks.add_task(process_compress_task, file_info)
+                background_tasks.add_task(
+                    process_compress_task, file_info, extract_password, compress_password, compression_level
+                )
 
         return success_response({
             "files": uploaded_files,
@@ -114,118 +127,42 @@ async def add_compress_task(
             "message": f"成功上传 {len(uploaded_files)} 个文件"
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
         # 清理已上传的文件
-        await cleanup_uploaded_files(uploaded_files)
+        await FileService.cleanup_uploaded_files(uploaded_files)
         logger.error(f"文件上传失败: {str(e)}")
         raise HTTPException(400, f"文件上传失败: {str(e)}")
 
 
-async def validate_file(file: UploadFile) -> dict:
-    """验证单个文件"""
-    # 判断是否为空文件
-    if not file.filename or getattr(file, 'size', 0) == 0:
-        return {"error": f"检测到空文件: {file.filename or '无文件名'}"}
-
-    # 检查文件大小（预检查）
-    if hasattr(file, 'size') and file.size > config.MAX_FILE_SIZE:
-        return {
-            "error": f"文件 {file.filename} 大小超过限制 {config.MAX_FILE_SIZE / (1024 * 1024):.2f} MB"
-        }
-
-    # 检查文件类型
-    file_ext = get_file_extension(file.filename)
-    if file_ext not in config.ALLOWED_FILE_TYPES:
-        return {
-            "error": f"不支持的文件类型: {file_ext} 仅支持 {', '.join(config.ALLOWED_FILE_TYPES)}"
-        }
-
-    return {"valid": True}
-
-
-async def upload_single_file(file: UploadFile) -> dict:
-    """上传单个文件 - 支持大文件"""
-    # 生成唯一文件名
-    if not config.UPLOAD_DIR.exists():
-        config.UPLOAD_DIR.mkdir(exist_ok=True)
-    if not config.TEMP_DIR.exists():
-        config.TEMP_DIR.mkdir(exist_ok=True)
-
-    unique_filename = f"{uuid.uuid4().hex}_{file.filename}"
-    temp_path = config.TEMP_DIR / f"{unique_filename}.tmp"
-    final_path = config.UPLOAD_DIR / unique_filename
-
-    logger.info(f"[compress] 开始上传文件: {file.filename}")
-
-    # 分块读取和写入文件
-    md5_hash = hashlib.md5()
-    total_size = 0
-
+async def process_compress_task(
+        file_info: dict, extract_password: str, compress_password: str,
+        compression_level: int):
+    """
+    后台处理压缩任务
+    :param file_info: 文件信息
+    :param extract_password: 解压密码
+    :param compress_password: 压缩密码
+    :param compression_level: 压缩级别
+    """
     try:
-        async with aiofiles.open(temp_path, 'wb') as out_file:
-            while True:
-                chunk = await file.read(config.CHUNK_SIZE)
-                if not chunk:
-                    break
+        logger.debug(f"[compress] 开始处理文件: {file_info['original_name']}")
 
-                total_size += len(chunk)
+        # 原始ZIP文件路径
+        original_zip_path: Path = settings.BASE_DIR / file_info['file_path']
+        # 输出ZIP文件路径
+        output_path: Path = Path("compressed") / f"{file_info['original_name']}.zip"
+        # 确保输出目录存在
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-                # 实时检查文件大小
-                if total_size > config.MAX_FILE_SIZE:
-                    raise HTTPException(
-                        400,
-                        f"文件 {file.filename} 大小超过限制 {config.MAX_FILE_SIZE / (1024 * 1024):.2f} MB"
-                    )
-
-                # 更新MD5
-                md5_hash.update(chunk)
-
-                # 写入文件
-                await out_file.write(chunk)
-
-        # 移动临时文件到最终位置
-        temp_path.rename(final_path)
-
-        logger.info(f"[compress] 文件上传完成: {file.filename}, 大小: {total_size} bytes")
-
-        return {
-            "original_name": file.filename,
-            "saved_name": unique_filename,
-            "file_path": str(final_path),
-            "size": f"{convert_bytes_to_mb(total_size)} MB",
-            "md5": md5_hash.hexdigest(),
-            "content_type": file.content_type,
-            "uploaded_at": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        # 清理临时文件
-        if temp_path.exists():
-            temp_path.unlink()
-        raise e
-
-
-async def process_compress_task(file_info: dict):
-    """后台处理压缩任务"""
-    try:
-        logger.info(f"[compress] 开始处理文件: {file_info['original_name']}")
-        # 这里添加实际的压缩处理逻辑
-        # 例如：解压、重新压缩、格式转换等
-        pass
+        await ZipService.rezip_file(
+            original_zip_path,
+            output_path,
+            extract_password,
+            compress_password,
+            compression_level
+        )
+        logger.info(f"[compress] 文件压缩成功: {output_path}")
     except Exception as e:
         logger.error(f"[compress] 处理文件失败 {file_info['original_name']}: {str(e)}")
-
-
-async def cleanup_uploaded_files(uploaded_files: List[dict]):
-    """
-    清理已上传的文件
-    :param uploaded_files: 已上传的文件列表
-    :return:
-    """
-    for file_info in uploaded_files:
-        try:
-            file_path = Path(file_info.get("file_path", ""))
-            if file_path.exists():
-                file_path.unlink()
-        except Exception as e:
-            logger.error(f"清理文件失败: {str(e)}")

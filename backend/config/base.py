@@ -44,7 +44,8 @@ def env(key, type_, default=None):
 class Settings(BaseSettings):
     ENV: str = "base"
 
-    BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # 项目根目录
+    BASE_DIR: Final[Path] = Path(__file__).resolve().parent.parent
 
     # 项目名称
     PROJECT_NAME: str = env('PROJECT_NAME', str, 'fastapi-test')
@@ -93,5 +94,6 @@ class Settings(BaseSettings):
     TEMP_DIR: Final[Path] = Path("temp")
     # 允许的文件类型（按后缀过滤）
     ALLOWED_FILE_TYPES: Final[Set[str]] = {
-        ".zip", ".tar.gz", ".rar", ".tar", ".tar.bz", ".7z"
+        ".zip",
+        # ".tar.gz", ".rar", ".tar", ".tar.bz", ".7z"
     }
