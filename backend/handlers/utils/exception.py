@@ -42,13 +42,24 @@ async def not_found_handler(request: Request, exc: HTTPException) -> ORJSONRespo
     :param exc: 异常对象
     :return: ORJSONResponse
     """
+    is_download_request = '/download/' in request.url.path
     logger.error(f"404 Handler triggered {exc.status_code} | Path: {request.url.path}")
+    if is_download_request:
+        message = "文件未找到 | File Not Found. 请求的文件不存在或已被删除."
+        docs_url = None
+    else:
+        message = "资源未找到 | Not Found. 请检查API文档以获取可用端点."
+        docs_url = str(request.url.replace(path="/api/docs"))
+
     response_data = {
         'code': 404,
         'error': exc.detail,
-        "message": "资源未找到 | Not Found. 请检查API文档以获取可用端点.",
-        'docs_url': str(request.url.replace(path="/api/docs"))
+        'message': message
     }
+
+    if docs_url:
+        response_data['docs_url'] = docs_url
+
     return ORJSONResponse(content=response_data, status_code=404)
 
 

@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: Final[Path] = Path("uploads")
     # 临时文件目录
     TEMP_DIR: Final[Path] = Path("temp")
+    COMPRESSED_DIR: Final[Path] = Path("compressed")
     # 允许的文件类型（按后缀过滤）
     ALLOWED_FILE_TYPES: Final[Set[str]] = {
         ".zip",

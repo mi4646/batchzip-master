@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import uuid
 import shutil
@@ -15,7 +15,9 @@ class ZipService:
     """
 
     @staticmethod
-    async def extract_zip(zip_path: str, extract_to: str, password: Optional[str] = None) -> List[str]:
+    async def extract_zip(
+            zip_path: Union[str, Path], extract_to: Union[str, Path], password: Optional[str] = None
+    ) -> List[str]:
         """
         解压ZIP文件到指定目录
 
@@ -37,19 +39,15 @@ class ZipService:
 
                 # 解压所有文件
                 for member in zip_ref.namelist():
-                    try:
-                        # 安全检查：防止路径遍历攻击
-                        member_path = Path(member)
-                        if member_path.is_absolute() or ".." in str(member_path):
-                            logger.warning(f"跳过不安全的文件路径: {member}")
-                            continue
-
-                        zip_ref.extract(member, extract_to)
-                        extracted_files.append(str(Path(extract_to) / member))
-                        logger.info(f"解压文件: {member}")
-                    except Exception as e:
-                        logger.error(f"解压文件 {member} 失败: {str(e)}")
+                    # 安全检查：防止路径遍历攻击
+                    member_path = Path(member)
+                    if member_path.is_absolute() or ".." in str(member_path):
+                        logger.warning(f"跳过不安全的文件路径: {member}")
                         continue
+
+                    zip_ref.extract(member, extract_to)
+                    extracted_files.append(str(Path(extract_to) / member))
+                    logger.info(f"解压文件: {member}")
 
             logger.info(f"ZIP文件解压完成，共解压 {len(extracted_files)} 个文件")
             return extracted_files
@@ -66,8 +64,8 @@ class ZipService:
 
     @staticmethod
     async def create_zip_from_directory(
-            source_dir: str,
-            output_path: str,
+            source_dir: Union[str, Path],
+            output_path: Union[str, Path],
             password: Optional[str] = None,
             compression_level: int = 6
     ) -> str:
@@ -113,8 +111,8 @@ class ZipService:
 
     @staticmethod
     async def rezip_file(
-            zip_path: str,
-            output_path: str,
+            zip_path: Union[str, Path],
+            output_path: Union[str, Path],
             extract_password: Optional[str] = None,
             compress_password: Optional[str] = None,
             compression_level: int = 6
@@ -163,7 +161,7 @@ class ZipService:
                 logger.info(f"清理临时目录: {temp_extract_dir}")
 
     @staticmethod
-    async def get_zip_info(zip_path: str, password: Optional[str] = None) -> dict:
+    async def get_zip_info(zip_path: Union[str, Path], password: Optional[str] = None) -> dict:
         """
         获取ZIP文件信息
         :param zip_path: ZIP文件路径

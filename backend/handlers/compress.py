@@ -1,11 +1,12 @@
 from typing import Annotated, Optional, List
 from fastapi.exceptions import HTTPException
-from fastapi import APIRouter, BackgroundTasks, File, UploadFile, Query, Form
+from fastapi import APIRouter, File, UploadFile, Query, Form
 
-import uuid
 import logging
 from pathlib import Path
 from datetime import datetime
+
+from starlette.responses import FileResponse
 
 from backend.config import settings
 from backend.handlers import success_response
@@ -38,10 +39,7 @@ async def get_compress_formats():
     """
     formats = []
     for ext in settings.ALLOWED_FILE_TYPES:
-        formats.append({
-            "name": ext[1:],
-            "description": f"{ext[1:].upper()} 压缩格式"
-        })
+        formats.append({"name": ext[1:]})
     return success_response({"formats": formats})
 
 
@@ -58,8 +56,8 @@ async def get_uploaded_files(
     :return: 文件列表
     """
     files = []
-    if settings.UPLOAD_DIR.exists():
-        for file_path in settings.UPLOAD_DIR.iterdir():
+    if settings.COMPRESSED_DIR.exists():
+        for file_path in settings.COMPRESSED_DIR.iterdir():
             if file_path.is_file():
                 stat = file_path.stat()
                 files.append({
@@ -84,11 +82,9 @@ async def add_compress_task(
         extract_password: Optional[str] = Form(None, description="解压密码"),
         compress_password: Optional[str] = Form(None, description="压缩密码"),
         compression_level: int = Form(6, ge=0, le=9, description="压缩级别 0-9"),
-        background_tasks: BackgroundTasks = None
 ):
     """
     添加压缩任务 - 支持大文件上传
-    :param background_tasks: 后台任务队列
     :param files:
     :param extract_password: 如果原文件有密码，需要提供extract_password
     :param compress_password: 如果需要密码保护，提供compress_password
@@ -108,61 +104,96 @@ async def add_compress_task(
         logger.error(f"文件队列验证失败: {str(e)}")
         raise HTTPException(400, f"文件验证失败: {str(e)}")
 
+    results = []
     uploaded_files = []
 
     try:
         for file in files:
-            file_info = await FileService.upload_single_file(file)
-            uploaded_files.append(file_info)
+            try:
+                file_info = await FileService.upload_single_file(file)
+                uploaded_files.append(file_info)
 
-            # 添加后台处理任务
-            if background_tasks:
-                background_tasks.add_task(
-                    process_compress_task, file_info, extract_password, compress_password, compression_level
+                # 同步处理压缩
+                logger.info(f"[compress] 开始处理文件: {file_info['original_name']}")
+
+                original_zip_path: Path = settings.BASE_DIR / file_info['file_path']
+                output_path: Path = settings.COMPRESSED_DIR / f"{file_info['original_name']}"
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                await ZipService.rezip_file(
+                    original_zip_path,
+                    output_path,
+                    extract_password,
+                    compress_password,
+                    compression_level
                 )
+                results.append({
+                    "status": "success",
+                    "output_path": str(output_path),
+                    "file_name": file_info['original_name'],
+                })
 
-        return success_response({
-            "files": uploaded_files,
-            "task_id": str(uuid.uuid4()),
-            "message": f"成功上传 {len(uploaded_files)} 个文件"
-        })
+                logger.info(f"[compress] 文件压缩成功: {output_path}")
+
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[compress] 处理文件失败 {getattr(file, 'filename', 'unknown')}: {error_msg}")
+
+                results.append({
+                    "file_name": getattr(file, 'filename', 'unknown'),
+                    "status": "failed",
+                    "error": error_msg
+                })
+
+        # 构建最终响应
+        successful_count = sum(1 for r in results if r["status"] == "success")
+        failed_count = sum(1 for r in results if r["status"] == "failed")
+
+        response_data = {
+            "total_files": len(results),
+            "successful": successful_count,
+            "failed": failed_count,
+            "results": results
+        }
+
+        # 清理所有上传的文件（无论成功失败）
+        await FileService.cleanup_uploaded_files(uploaded_files)
+
+        # 判断是否应该返回错误
+        if len(results) > 0:
+            if failed_count == len(results):
+                # 所有文件都失败
+                raise HTTPException(400, "所有文件处理失败")
+            elif failed_count > 0:
+                # 部分失败 - 仍然返回成功，但在消息中说明
+                response_data["message"] = f"处理完成: {successful_count}个成功, {failed_count}个失败"
+                return success_response(response_data)
+            else:
+                # 全部成功
+                response_data["message"] = "所有文件处理成功"
+                return success_response(response_data)
+        else:
+            # 没有文件需要处理
+            raise HTTPException(400, "没有文件需要处理")
 
     except HTTPException:
+        # 清理所有文件
+        await FileService.cleanup_uploaded_files(uploaded_files)
         raise
     except Exception as e:
-        # 清理已上传的文件
+        # 系统错误，清理所有文件
         await FileService.cleanup_uploaded_files(uploaded_files)
-        logger.error(f"文件上传失败: {str(e)}")
-        raise HTTPException(400, f"文件上传失败: {str(e)}")
+        raise HTTPException(400, f"处理失败: {str(e)}")
 
 
-async def process_compress_task(
-        file_info: dict, extract_password: str, compress_password: str,
-        compression_level: int):
+# 下载压缩文件
+@router.get("/compressed/download/{filename}", summary="下载压缩文件")
+async def download_compressed_file(filename: str):
     """
-    后台处理压缩任务
-    :param file_info: 文件信息
-    :param extract_password: 解压密码
-    :param compress_password: 压缩密码
-    :param compression_level: 压缩级别
+    下载压缩文件
+    :param filename: 文件名
+    :return: 压缩文件
     """
-    try:
-        logger.debug(f"[compress] 开始处理文件: {file_info['original_name']}")
-
-        # 原始ZIP文件路径
-        original_zip_path: Path = settings.BASE_DIR / file_info['file_path']
-        # 输出ZIP文件路径
-        output_path: Path = Path("compressed") / f"{file_info['original_name']}.zip"
-        # 确保输出目录存在
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        await ZipService.rezip_file(
-            original_zip_path,
-            output_path,
-            extract_password,
-            compress_password,
-            compression_level
-        )
-        logger.info(f"[compress] 文件压缩成功: {output_path}")
-    except Exception as e:
-        logger.error(f"[compress] 处理文件失败 {file_info['original_name']}: {str(e)}")
+    file_path = settings.COMPRESSED_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(404, "文件不存在")
+    return FileResponse(file_path, filename=filename, media_type="application/zip")
