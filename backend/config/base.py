@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     ENV: str = "base"
 
     # 项目根目录
-    BASE_DIR: Final[Path] = Path(__file__).resolve().parent.parent
+    BASE_DIR: Final[Path] = Path(__file__).resolve().parent.parent.parent
 
     # 项目名称
     PROJECT_NAME: str = env('PROJECT_NAME', str, 'fastapi-test')
@@ -89,10 +89,10 @@ class Settings(BaseSettings):
     # 最大文件大小 500MB
     MAX_FILE_SIZE: Final[int] = 1024 * 1024 * 500
     # 文件上传目录
-    UPLOAD_DIR: Final[Path] = Path("uploads")
+    UPLOAD_DIR: Final[Path] = BASE_DIR / "uploads"
     # 临时文件目录
-    TEMP_DIR: Final[Path] = Path("temp")
-    COMPRESSED_DIR: Final[Path] = Path("compressed")
+    TEMP_DIR: Final[Path] = BASE_DIR / "temp"
+    COMPRESSED_DIR: Final[Path] = BASE_DIR / "compressed"
     # 允许的文件类型（按后缀过滤）
     ALLOWED_FILE_TYPES: Final[Set[str]] = {
         ".zip",
