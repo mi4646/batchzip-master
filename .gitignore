@@ -219,3 +219,8 @@ backend/logs/
 backend/uploads/
 backend/temp/
 backend/compressed/
+
+# tauri
+src-tauri/target
+node_modules/
+

@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import HTTPException, RequestValidationError
 
-from routes import routers
-from config import settings as config
+from backend.routes import routers
+from backend.config import settings as config
 from backend.handlers.utils import (
     logger,
     logging,
