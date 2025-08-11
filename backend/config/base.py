@@ -98,3 +98,5 @@ class Settings(BaseSettings):
         ".zip",
         # ".tar.gz", ".rar", ".tar", ".tar.bz", ".7z"
     }
+    # 默认密码
+    DEFAULT_PASSWORD: bytes = "123321"

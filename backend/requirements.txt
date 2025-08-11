@@ -2,3 +2,4 @@ fastapi[all]
 redis
 loguru
 aiofiles
+pyminizip

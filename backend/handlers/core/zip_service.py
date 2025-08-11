@@ -4,7 +4,11 @@ import uuid
 import shutil
 import zipfile
 import logging
+import pyminizip
+from hashlib import md5
 from pathlib import Path
+
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +51,7 @@ class ZipService:
 
                     zip_ref.extract(member, extract_to)
                     extracted_files.append(str(Path(extract_to) / member))
-                    logger.info(f"解压文件: {member}")
+                    logger.debug(f"解压文件: {member}")
 
             logger.info(f"ZIP文件解压完成，共解压 {len(extracted_files)} 个文件")
             return extracted_files
@@ -70,44 +74,55 @@ class ZipService:
             compression_level: int = 6
     ) -> str:
         """
-        从目录创建ZIP文件
-
-        :param source_dir: 源目录路径
-        :param output_path: 输出ZIP文件路径
+        使用 pyminizip 创建 ZIP 文件，并确保路径使用 POSIX 格式（/分隔）。
+        :param source_dir: 要压缩的源目录
+        :param output_path: 压缩输出文件路径
         :param password: 压缩密码（可选）
-        :param compression_level: 压缩级别 (0-9)
-        :return: 输出ZIP文件路径
+        :param compression_level: 压缩等级（0-9）
+        :return: 生成的 ZIP 文件路径
         """
         try:
             source_path = Path(source_dir)
             if not source_path.exists():
                 raise Exception(f"源目录不存在: {source_dir}")
 
-            # 创建ZIP文件
-            with zipfile.ZipFile(
-                    output_path,
-                    'w',
-                    compression=zipfile.ZIP_DEFLATED,
-                    compresslevel=compression_level
-            ) as zip_ref:
+            files_to_zip = []
+            relative_paths = []
 
-                # 如果设置了密码，添加密码保护
-                if password:
-                    zip_ref.setpassword(password.encode('utf-8'))
+            for file_path in source_path.rglob('*'):
+                if file_path.is_file():
+                    # 保证路径是 POSIX 风格（Linux/跨平台兼容）
+                    abs_file_path = file_path.resolve().as_posix()
+                    rel_file_path = file_path.relative_to(source_path).as_posix()
 
-                # 遍历目录中的所有文件
-                for file_path in source_path.rglob('*'):
-                    if file_path.is_file():
-                        # 计算相对路径
-                        relative_path = file_path.relative_to(source_path)
-                        zip_ref.write(file_path, relative_path)
-                        logger.debug(f"添加文件到ZIP: {relative_path}")
+                    # 获取所在的目录路径作为 prefix
+                    prefix = str(Path(rel_file_path).parent.as_posix())
+                    if prefix == ".":
+                        prefix = ""  # root 下的文件
 
-            logger.info(f"ZIP文件创建完成: {output_path}")
-            return output_path
+                    files_to_zip.append(abs_file_path)
+                    relative_paths.append(prefix)
+
+                    logger.debug(f"✅ 添加文件: {abs_file_path} 到 ZIP 目录: {prefix}")
+
+            logger.debug(f"relative_paths: {relative_paths}")
+            logger.debug(f"files_to_zip: {files_to_zip}")
+
+            # 调用 pyminizip 进行压缩
+            pyminizip.compress_multiple(
+                files_to_zip,
+                relative_paths,
+                str(output_path),
+                password or "",
+                compression_level
+            )
+
+            logger.info(f"ZIP 文件已创建: {output_path}")
+            return str(output_path)
 
         except Exception as e:
-            raise Exception(f"创建ZIP文件失败: {str(e)}")
+            logger.error(f"创建 ZIP 文件失败: {e}")
+            raise Exception(f"创建 ZIP 文件失败: {e}")
 
     @staticmethod
     async def rezip_file(
@@ -196,3 +211,11 @@ class ZipService:
 
         except Exception as e:
             raise Exception(f"获取ZIP文件信息失败: {str(e)}")
+
+    @staticmethod
+    def get_default_password() -> str:
+        """
+        获取默认密码
+        :return: 默认密码
+        """
+        return md5(settings.DEFAULT_PASSWORD).hexdigest()

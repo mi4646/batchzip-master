@@ -79,9 +79,11 @@ async def get_uploaded_files(
 )
 async def add_compress_task(
         files: Annotated[Optional[List[UploadFile]], File(description="多个文件作为 UploadFile")] = None,
-        extract_password: Optional[str] = Form(None, description="解压密码"),
-        compress_password: Optional[str] = Form(None, description="压缩密码"),
+        extract_password: Optional[str] = Form('c8837b23ff8aaa8a2dde915473ce0991', description="解压密码"),
+        compress_password: Optional[str] = Form('', description="压缩密码"),
         compression_level: int = Form(6, ge=0, le=9, description="压缩级别 0-9"),
+        # 是否使用默认密码
+        is_use_default_password: bool = Form(True, description="是否使用默认密码"),
 ):
     """
     添加压缩任务 - 支持大文件上传
@@ -89,6 +91,7 @@ async def add_compress_task(
     :param extract_password: 如果原文件有密码，需要提供extract_password
     :param compress_password: 如果需要密码保护，提供compress_password
     :param compression_level: 压缩级别 0-9, 0 表示无压缩，9 表示最大压缩
+    :param is_use_default_password:
     """
     if not files:
         raise HTTPException(400, "没有上传任何文件")
@@ -104,6 +107,10 @@ async def add_compress_task(
         logger.error(f"文件队列验证失败: {str(e)}")
         raise HTTPException(400, f"文件验证失败: {str(e)}")
 
+    if is_use_default_password:
+        compress_password = ZipService.get_default_password()
+        logger.debug(f"[compress] 使用默认密码: {compress_password}")
+
     results = []
     uploaded_files = []
 
@@ -111,11 +118,11 @@ async def add_compress_task(
         for file in files:
             try:
                 file_info = await FileService.upload_single_file(file)
+                logger.debug(f"[compress] 上传文件: {file_info}")
                 uploaded_files.append(file_info)
 
                 # 同步处理压缩
                 logger.info(f"[compress] 开始处理文件: {file_info['original_name']}")
-
                 original_zip_path: Path = settings.BASE_DIR / file_info['file_path']
                 output_path: Path = settings.COMPRESSED_DIR / f"{file_info['original_name']}"
                 output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,6 +137,7 @@ async def add_compress_task(
                     "status": "success",
                     "output_path": str(output_path),
                     "file_name": file_info['original_name'],
+                    "size": f"{convert_bytes_to_mb(file_info['size'])} MB",
                 })
 
                 logger.info(f"[compress] 文件压缩成功: {output_path}")
@@ -186,8 +194,8 @@ async def add_compress_task(
 
 
 # 下载压缩文件
-@router.get("/compressed/download/{filename}", summary="下载压缩文件")
-async def download_compressed_file(filename: str):
+@router.get("/compressed/download/", summary="下载压缩文件")
+async def download_compressed_file(filename: Optional[str] = Form('', description="文件名")):
     """
     下载压缩文件
     :param filename: 文件名
