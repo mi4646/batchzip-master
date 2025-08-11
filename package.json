@@ -1,10 +1,12 @@
 {
   "name": "my-tauri-app",
   "scripts": {
-   "backend:dev": ".\\.venv\\Scripts\\python.exe -m uvicorn backend.main:app --reload --port 8000",
-    "backend:build": ".\\.venv\\Scripts\\python.exe -m uvicorn backend.main:app --port 8000 --host 127.0.0.1",
+    "backend:dev": "set PYTHONIOENCODING=utf-8 && .\\.venv\\Scripts\\python.exe -m uvicorn backend.main:app --reload --port 8000",
+    "backend:build": "set PYTHONIOENCODING=utf-8 && .\\.venv\\Scripts\\python.exe -m uvicorn backend.main:app --port 8000 --host 127.0.0.1",
     "tauri:dev": "npx --yes concurrently --kill-others \"npm run backend:dev\" \"tauri dev\"",
-    "tauri:build": "npx --yes concurrently --kill-others \"npm run backend:build\" \"tauri build\""
+    "tauri:build": "npx --yes concurrently --kill-others \"npm run backend:build\" \"tauri build\"",
+    "dev": "tauri dev",
+    "build": "tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.7.1"

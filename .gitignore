@@ -216,6 +216,9 @@ __marimo__/
 backend/logs/
 
 # Cache
+uploads/
+temp/
+compressed/
 backend/uploads/
 backend/temp/
 backend/compressed/
